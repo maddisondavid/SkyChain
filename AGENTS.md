@@ -18,5 +18,6 @@ This `AGENTS.md` file defines the directives that apply to the entire `SkyChain`
 ## PR and Testing Expectations
 - Provide meaningful commit messages describing the changes you introduce.
 - Before submitting a pull request, run the appropriate Go formatting and testing commands relevant to your changes.
+- Every piece of production code must be accompanied by Go tests that live in the same package as the code they verify. Strive for 100% coverage whenever practical and justify any intentional gaps.
 
 Adhering to these guidelines helps maintain consistency across the project and streamlines collaboration.
