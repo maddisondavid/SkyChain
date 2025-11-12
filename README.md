@@ -1,99 +1,58 @@
 # SkyChain
-A lightweight proof-of-authority (PoA) blockchain designed for IoT sensor data.
+A lightweight proof-of-authority (PoA) blockchain tailored for trustworthy IoT telemetry.
 
-SkyChain provides an append-only, verifiable ledger where IoT device readings are recorded into signed, immutable blocks on a fixed schedule. It demonstrates a scalable and modular design for distributed, fault-tolerant data collection across IoT networks.
+SkyChain records IoT readings in an append-only ledger produced by a small, curated validator set. The project focuses on reliable data provenance, easy verification by gateways, and modular components that can evolve without reshaping the entire stack.
 
 ![Title](Images/TitleImage.png)
 
 ---
 
-## Overview
-SkyChain maintains a time-sequenced blockchain for recording IoT events. Each block:
+## What SkyChain Delivers
+- **Deterministic PoA ledger** — Validators take scheduled turns producing blocks, removing the need for mining or tokens.
+- **Signed IoT events** — Devices submit authenticated readings that can be traced back to their origin.
+- **Gateway friendliness** — Intermediate nodes buffer, verify, and forward events while remaining lightweight clients.
+- **Pluggable storage** — Chain data is persisted behind a storage interface so different backends can be swapped in as requirements grow.
 
-- references the previous block by hash (ensuring immutability);
-- stores batches of signed IoT events;
-- is timestamped and signed by authorised validators;
-- can be verified independently by any node or gateway.
-
-Gateways act as light clients: they collect device data, verify signatures, and submit events to validators for inclusion in the next block.
+These pillars stay constant even as specific protocols, storage engines, or deployment choices evolve.
 
 ---
 
-## Core Concepts
-
-| Component | Role |
-|------------|------|
-| **Devices** | Generate signed readings (`device_id`, `nonce`, `timestamp`, `payload`). |
-| **Gateways** | Buffer and verify readings, forward to validators, resync after outages. |
-| **Validators** | Produce and sign blocks at fixed intervals, maintain the chain’s integrity. |
-| **ChainStore** | Pluggable backend for block storage (JSON file for MVP, scalable later). |
-
-Consensus is deterministic and schedule-based: one validator proposes a block every 10 seconds, others verify and countersign. No mining or tokens — just verifiable trust in data.
+## System Building Blocks
+| Component | Purpose |
+|-----------|---------|
+| Devices | Emit signed telemetry payloads tagged with device metadata.
+| Gateways | Collect device messages, perform lightweight checks, and relay them to validators.
+| Validators | Author and sign blocks on a fixed cadence to extend the canonical chain.
+| ChainStore | Abstract persistence layer that supports the validator workflow.
 
 ---
 
-## MVP Features
+## Development Themes
+SkyChain is iterated through focused milestones captured under [`/plans`](plans). Each plan documents a cohesive slice of functionality (e.g., single-validator MVP, signature hardening, multi-validator expansion). The README stays high-level; refer to those living documents for step-by-step tasks.
 
-- Single validator (PoA-Lite)
-- JSON file storage (`data/chain.json`)
-- HTTP API:  
-  - `POST /event` — submit IoT reading  
-  - `GET /chain` — view full blockchain  
-  - `GET /head` — view latest block metadata  
-  - `GET /health` — node status  
-- Configurable block interval (default 10 s)
-- Simple demo client (`skyctl`) for posting test events
+Key themes guiding future work:
+- Gradual hardening of device identity and key management.
+- Scaling from a single validator to a committee-based PoA cluster.
+- Enhancing observability and external integrations without compromising simplicity.
 
 ---
 
-## Stretch Goals
-
-- ED25519 device signatures + whitelist  
-- Multi-validator PoA consensus (quorum)  
-- Merkle roots + inclusion proofs  
-- Validator/device registries and key rotation  
-- Web dashboard showing block height & recent events  
-- External timestamp anchoring (optional)
-
----
-
-## Architecture Overview
-
-Device → Gateway (light node) → Validator Cluster (PoA) → Archive / Analytics
-
-Validators store the canonical chain; gateways keep recent headers and proofs; devices remain stateless.
-
----
-
-## Running SkyChain
-
-### Start validator
-```bash
-go run ./cmd/skychain --role=validator --interval=10s --data=data/chain.json
+## Repository Layout
 ```
-
-### Send test event
-```bash
-curl -X POST localhost:8080/event   -H 'Content-Type: application/json'   -d '{"device_id":"sensor-1","nonce":1,"ts":1710000000,"payload":"22.5°C"}'
-```
-
-### Inspect chain
-```bash
-curl localhost:8080/chain | jq .
+├── cmd/skychain      # Entry point for running validator or gateway roles
+├── pkg/              # Go packages implementing ledger, networking, and storage logic
+├── plans/            # Milestone documents outlining implementation phases
+├── Images/           # Project diagrams and artwork
+└── README.md         # High-level project overview (this file)
 ```
 
 ---
 
-## Development Plan
+## Getting Started
+Implementation details evolve, but the general workflow remains:
+1. **Review the relevant plan** in [`/plans`](plans) for the milestone you are targeting.
+2. **Build or run Go binaries** from the [`cmd/skychain`](cmd/skychain) entry point with configuration flags suited to your role (validator, gateway, etc.).
+3. **Exercise APIs or clients** to submit sample events and inspect resulting blocks.
 
-All build steps are documented in `/plans/`:
-- `MVP.md` — core single-validator ledger  
-- `STRETCH1.md` — signatures and device registry  
-- `STRETCH2.md` — multi-validator PoA, dashboard, metrics
+Refer to the plan documents and in-code documentation for concrete commands and configuration options as they change over time.
 
-Each phase is self-contained and can be implemented independently.
-
----
-
-## License
-MIT © 2025 David Maddison
