@@ -3,6 +3,8 @@ A lightweight proof-of-authority (PoA) blockchain designed for IoT sensor data.
 
 SkyChain provides an append-only, verifiable ledger where IoT device readings are recorded into signed, immutable blocks on a fixed schedule. It demonstrates a scalable and modular design for distributed, fault-tolerant data collection across IoT networks.
 
+![Title](Images/TitleImage.png)
+
 ---
 
 ## Overview
