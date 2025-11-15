@@ -20,10 +20,10 @@ These pillars stay constant even as specific protocols, storage engines, or depl
 ## System Building Blocks
 | Component | Purpose |
 |-----------|---------|
-| Devices | Emit signed telemetry payloads tagged with device metadata.
-| Gateways | Collect device messages, perform lightweight checks, and relay them to validators.
-| Validators | Author and sign blocks on a fixed cadence to extend the canonical chain.
-| ChainStore | Abstract persistence layer that supports the validator workflow.
+| Devices | Emit signed telemetry payloads tagged with device metadata.|
+| Gateways | Collect device messages, perform lightweight checks, and relay them to validators.|
+| Validators | Author and sign blocks on a fixed cadence to extend the canonical chain.|
+| ChainStore | Abstract persistence layer that supports the validator workflow.|
 
 ---
 
@@ -48,6 +48,59 @@ Key themes guiding future work:
 
 ---
 
+## MVP Validator
+The initial MVP targets a single-validator setup that accepts IoT events over HTTP, seals them into blocks every 10 seconds, and persists the ledger as JSON on disk.
+
+### Build
+```bash
+go build ./cmd/skychain
+```
+
+### Run
+```bash
+./skychain \
+  --addr ":8080" \
+  --data data/chain.json \
+  --interval 10s \
+  --validator skychain-validator \
+  --secret skychain-local-secret
+```
+
+The node listens on the configured address and writes the blockchain to the provided `--data` path. On shutdown (Ctrl+C) it flushes pending events and persists the latest chain snapshot.
+
+### REST API
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/event` | `POST` | Submit an IoT event `{device_id, nonce, ts, payload}`. `ts` must be RFC3339; it defaults to the arrival time when omitted. |
+| `/chain` | `GET` | Retrieve the full chain as JSON. |
+| `/head`  | `GET` | Inspect metadata for the most recent block. |
+| `/health`| `GET` | Node status (validator id, block count, pending queue length). |
+
+Example event submission:
+```bash
+curl -X POST http://localhost:8080/event \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "device_id": "sensor-1",
+    "nonce": "42",
+    "payload": {"temp": 21.7}
+  }'
+```
+
+Query the latest head:
+```bash
+curl http://localhost:8080/head | jq
+```
+
+---
+
+## Testing
+```bash
+go test ./...
+```
+
+---
+
 ## Getting Started
 Implementation details evolve, but the general workflow remains:
 1. **Review the relevant plan** in [`/plans`](plans) for the milestone you are targeting.
@@ -55,4 +108,3 @@ Implementation details evolve, but the general workflow remains:
 3. **Exercise APIs or clients** to submit sample events and inspect resulting blocks.
 
 Refer to the plan documents and in-code documentation for concrete commands and configuration options as they change over time.
-
