@@ -1,0 +1,13 @@
+{
+  "devices": 10,
+  "min_interval_ms": 1000,
+  "max_interval_ms": 5000,
+  "offline_probability": 0.1,
+  "spike_probability": 0.05,
+  "endpoint": "http://localhost:8080/event",
+  "sensors": [
+    "temperature",
+    "humidity",
+    "pressure"
+  ]
+}
