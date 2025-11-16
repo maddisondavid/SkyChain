@@ -292,6 +292,12 @@ func (c *Chain) Snapshot() []Block {
 	defer c.mu.RUnlock()
 
 	out := make([]Block, len(c.blocks))
-	copy(out, c.blocks)
+	for i, block := range c.blocks {
+		// Create a copy of the block and its events to prevent
+		// mutations from affecting the live chain state.
+		bCopy := block
+		bCopy.Events = deepCopyEvents(block.Events)
+		out[i] = bCopy
+	}
 	return out
 }
