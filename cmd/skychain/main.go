@@ -12,24 +12,31 @@ import (
 
 	"github.com/skychain/skychain/pkg/chain"
 	"github.com/skychain/skychain/pkg/node"
+	"github.com/skychain/skychain/pkg/registry"
 )
 
 func main() {
 	var (
-		dataPath  = flag.String("data", "data/chain.json", "path to the chain json file")
-		addr      = flag.String("addr", ":8080", "http listen address")
-		interval  = flag.Duration("interval", 10*time.Second, "block sealing interval")
-		validator = flag.String("validator", "skychain-validator", "validator identifier")
-		secret    = flag.String("secret", "skychain-local-secret", "validator secret for signing")
+		dataPath   = flag.String("data", "data/chain.json", "path to the chain json file")
+		addr       = flag.String("addr", ":8080", "http listen address")
+		interval   = flag.Duration("interval", 10*time.Second, "block sealing interval")
+		validator  = flag.String("validator", "skychain-validator", "validator identifier")
+		secret     = flag.String("secret", "skychain-local-secret", "validator secret for signing")
+		devicesCfg = flag.String("devices", "config/devices.json", "path to devices.json registry")
 	)
 	flag.Parse()
+
+	reg, err := registry.Load(*devicesCfg)
+	if err != nil {
+		log.Fatalf("load device registry: %v", err)
+	}
 
 	ledger, err := chain.LoadOrCreate(*dataPath, *validator, *secret)
 	if err != nil {
 		log.Fatalf("load chain: %v", err)
 	}
 
-	skyNode, err := node.NewNode(ledger, *dataPath, *interval)
+	skyNode, err := node.NewNode(ledger, *dataPath, *interval, reg)
 	if err != nil {
 		log.Fatalf("create node: %v", err)
 	}

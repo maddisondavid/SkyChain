@@ -63,7 +63,8 @@ go build ./cmd/skychain
   --data data/chain.json \
   --interval 10s \
   --validator skychain-validator \
-  --secret skychain-local-secret
+  --secret skychain-local-secret \
+  --devices config/devices.json
 ```
 
 The node listens on the configured address and writes the blockchain to the provided `--data` path. On shutdown (Ctrl+C) it flushes pending events and persists the latest chain snapshot.
@@ -86,6 +87,26 @@ curl -X POST http://localhost:8080/event \
     "payload": {"temp": 21.7}
   }'
 ```
+
+Requests from devices that do not appear in the configured registry receive `403 Forbidden` responses.
+
+---
+
+## Device Registry and Tooling
+
+SkyChain ships with a managed ED25519 public-key registry stored in `devices.json`. The validator daemon loads the file on startup and continuously polls it for changes, enabling hot updates without restarting the node.
+
+Use the `devicectl` helper to manage registry entries and emit an audit trail:
+
+```bash
+go build ./cmd/devicectl
+./devicectl --devices config/devices.json --audit config/devices.audit.log add sensor-3 Abase64Key==
+./devicectl --devices config/devices.json update sensor-1 NewBase64Key==
+./devicectl --devices config/devices.json revoke sensor-2
+./devicectl --devices config/devices.json list
+```
+
+Each command validates that keys decode to 32-byte ED25519 public keys, preserves deterministic JSON ordering, and appends a JSON line entry to the audit log describing the change (timestamp, action, device, old/new keys).
 
 Query the latest head:
 ```bash
