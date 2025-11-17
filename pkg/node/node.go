@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/skychain/skychain/pkg/chain"
+	"github.com/skychain/skychain/pkg/eventauth"
 	"github.com/skychain/skychain/pkg/registry"
 )
 
@@ -22,6 +25,9 @@ type Node struct {
 
 	pendingMu sync.Mutex
 	pending   []chain.Event
+
+	nonceMu   sync.Mutex
+	lastNonce map[string]uint64
 
 	startOnce sync.Once
 	stopOnce  sync.Once
@@ -49,6 +55,7 @@ func NewNode(c *chain.Chain, storagePath string, interval time.Duration, reg *re
 		interval:    interval,
 		registry:    reg,
 		pending:     make([]chain.Event, 0),
+		lastNonce:   make(map[string]uint64),
 		stopChan:    make(chan struct{}),
 	}, nil
 }
@@ -113,7 +120,19 @@ func (n *Node) flush() {
 		return
 	}
 
-	block, err := n.chain.AppendBlock(events)
+	valid := make([]chain.Event, 0, len(events))
+	for _, evt := range events {
+		if err := n.verifyEvent(evt); err != nil {
+			log.Printf("discarding event from %s: %v", evt.DeviceID, err)
+			continue
+		}
+		valid = append(valid, evt)
+	}
+	if len(valid) == 0 {
+		return
+	}
+
+	block, err := n.chain.AppendBlock(valid)
 	if err != nil {
 		log.Printf("append block: %v", err)
 		return
@@ -168,42 +187,24 @@ func (n *Node) handleEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		DeviceID string                 `json:"device_id"`
-		Nonce    string                 `json:"nonce"`
-		TS       string                 `json:"ts"`
-		Payload  map[string]interface{} `json:"payload"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	dec := json.NewDecoder(r.Body)
+	dec.UseNumber()
+	var req eventRequest
+	if err := dec.Decode(&req); err != nil {
 		http.Error(w, "invalid json payload", http.StatusBadRequest)
 		return
 	}
 
-	if req.DeviceID == "" {
-		http.Error(w, "device_id is required", http.StatusBadRequest)
-		return
-	}
-	if _, err := n.registry.Lookup(req.DeviceID); err != nil {
-		http.Error(w, "device is not registered", http.StatusForbidden)
-		return
-	}
-
-	eventTime := time.Now().UTC()
-	if req.TS != "" {
-		parsed, err := time.Parse(time.RFC3339Nano, req.TS)
-		if err != nil {
-			http.Error(w, "ts must be RFC3339 timestamp", http.StatusBadRequest)
+	evt, err := n.validateIncomingEvent(req)
+	if err != nil {
+		var verr *eventValidationError
+		if errors.As(err, &verr) {
+			http.Error(w, verr.message, verr.status)
 			return
 		}
-		eventTime = parsed
-	}
-
-	evt := chain.Event{
-		DeviceID: req.DeviceID,
-		Nonce:    req.Nonce,
-		TS:       eventTime,
-		Payload:  req.Payload,
+		log.Printf("event validation failed: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
 	}
 
 	n.AddEvent(evt)
@@ -260,4 +261,110 @@ func respondJSON(w http.ResponseWriter, payload any) {
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
 		log.Printf("write response: %v", err)
 	}
+}
+
+type eventRequest struct {
+	DeviceID  string                 `json:"device_id"`
+	Nonce     json.RawMessage        `json:"nonce"`
+	TS        string                 `json:"ts"`
+	Payload   map[string]interface{} `json:"payload"`
+	Signature string                 `json:"sig"`
+}
+
+type eventValidationError struct {
+	status  int
+	message string
+}
+
+func (e *eventValidationError) Error() string {
+	return e.message
+}
+
+func (n *Node) validateIncomingEvent(req eventRequest) (chain.Event, error) {
+	if req.DeviceID == "" {
+		return chain.Event{}, &eventValidationError{status: http.StatusBadRequest, message: "device_id is required"}
+	}
+	nonce, err := parseNonce(req.Nonce)
+	if err != nil {
+		return chain.Event{}, &eventValidationError{status: http.StatusBadRequest, message: err.Error()}
+	}
+
+	eventTime := time.Now().UTC()
+	if req.TS != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, req.TS)
+		if err != nil {
+			return chain.Event{}, &eventValidationError{status: http.StatusBadRequest, message: "ts must be RFC3339 timestamp"}
+		}
+		eventTime = parsed
+	}
+	if req.Signature == "" {
+		return chain.Event{}, &eventValidationError{status: http.StatusBadRequest, message: "sig is required"}
+	}
+
+	pubKey, err := n.registry.PublicKey(req.DeviceID)
+	if err != nil {
+		if errors.Is(err, registry.ErrUnknownDevice) {
+			return chain.Event{}, &eventValidationError{status: http.StatusForbidden, message: "device is not registered"}
+		}
+		return chain.Event{}, err
+	}
+
+	evt := chain.Event{
+		DeviceID:  req.DeviceID,
+		Nonce:     nonce,
+		TS:        eventTime,
+		Payload:   req.Payload,
+		Signature: req.Signature,
+	}
+	if err := eventauth.Verify(evt, pubKey); err != nil {
+		if errors.Is(err, eventauth.ErrInvalidSignature) {
+			return chain.Event{}, &eventValidationError{status: http.StatusForbidden, message: "invalid signature"}
+		}
+		return chain.Event{}, err
+	}
+	if err := n.recordNonce(req.DeviceID, nonce); err != nil {
+		return chain.Event{}, &eventValidationError{status: http.StatusConflict, message: err.Error()}
+	}
+	return evt, nil
+}
+
+func (n *Node) recordNonce(deviceID string, nonce uint64) error {
+	n.nonceMu.Lock()
+	defer n.nonceMu.Unlock()
+
+	if prev, ok := n.lastNonce[deviceID]; ok && nonce <= prev {
+		return fmt.Errorf("nonce %d must be greater than %d", nonce, prev)
+	}
+	n.lastNonce[deviceID] = nonce
+	return nil
+}
+
+func parseNonce(raw json.RawMessage) (uint64, error) {
+	if raw == nil {
+		return 0, errors.New("nonce is required")
+	}
+	var num uint64
+	if err := json.Unmarshal(raw, &num); err == nil {
+		return num, nil
+	}
+	var str string
+	if err := json.Unmarshal(raw, &str); err == nil {
+		if str == "" {
+			return 0, errors.New("nonce is required")
+		}
+		val, err := strconv.ParseUint(str, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("nonce must be an integer: %w", err)
+		}
+		return val, nil
+	}
+	return 0, errors.New("nonce must be a number or numeric string")
+}
+
+func (n *Node) verifyEvent(evt chain.Event) error {
+	pubKey, err := n.registry.PublicKey(evt.DeviceID)
+	if err != nil {
+		return err
+	}
+	return eventauth.Verify(evt, pubKey)
 }

@@ -15,7 +15,7 @@ func TestAppendBlockLinkage(t *testing.T) {
 
 	evt := Event{
 		DeviceID: "sensor-1",
-		Nonce:    "1",
+		Nonce:    1,
 		TS:       time.Now().UTC(),
 		Payload: map[string]interface{}{
 			"temp": 21.5,
@@ -47,7 +47,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		t.Fatalf("new chain: %v", err)
 	}
 
-	evt := Event{DeviceID: "sensor-2", TS: time.Now().UTC()}
+	evt := Event{DeviceID: "sensor-2", Nonce: 1, TS: time.Now().UTC()}
 	if _, err := chain.AppendBlock([]Event{evt}); err != nil {
 		t.Fatalf("append block: %v", err)
 	}

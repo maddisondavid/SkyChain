@@ -72,7 +72,7 @@ The node listens on the configured address and writes the blockchain to the prov
 ### REST API
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/event` | `POST` | Submit an IoT event `{device_id, nonce, ts, payload}`. `ts` must be RFC3339; it defaults to the arrival time when omitted. |
+| `/event` | `POST` | Submit an IoT event `{device_id, nonce, ts, payload, sig}`. `sig` is a base64 ED25519 signature over the canonical event payload. `ts` must be RFC3339; it defaults to the arrival time when omitted. |
 | `/chain` | `GET` | Retrieve the full chain as JSON. |
 | `/head`  | `GET` | Inspect metadata for the most recent block. |
 | `/health`| `GET` | Node status (validator id, block count, pending queue length). |
@@ -83,12 +83,14 @@ curl -X POST http://localhost:8080/event \
   -H 'Content-Type: application/json' \
   -d '{
     "device_id": "sensor-1",
-    "nonce": "42",
-    "payload": {"temp": 21.7}
+    "nonce": 42,
+    "ts": "2024-01-02T15:04:05Z",
+    "payload": {"temp": 21.7},
+    "sig": "BASE64_SIGNATURE"
   }'
 ```
 
-Requests from devices that do not appear in the configured registry receive `403 Forbidden` responses.
+Requests from devices that do not appear in the configured registry or that present invalid signatures receive `403 Forbidden` responses. Each device nonce must be strictly increasing; replayed nonces result in `409 Conflict` responses.
 
 ---
 
