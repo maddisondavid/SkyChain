@@ -13,10 +13,11 @@ import (
 
 // Event represents a single IoT event that will be persisted on the blockchain.
 type Event struct {
-	DeviceID string                 `json:"device_id"`
-	Nonce    string                 `json:"nonce"`
-	TS       time.Time              `json:"ts"`
-	Payload  map[string]interface{} `json:"payload"`
+	DeviceID  string                 `json:"device_id"`
+	Nonce     uint64                 `json:"nonce"`
+	TS        time.Time              `json:"ts"`
+	Payload   map[string]interface{} `json:"payload"`
+	Signature string                 `json:"sig"`
 }
 
 // Block contains a list of events and links to the previous block via hash.
@@ -210,10 +211,11 @@ func deepCopyEvents(events []Event) []Event {
 		}
 
 		copied[i] = Event{
-			DeviceID: evt.DeviceID,
-			Nonce:    evt.Nonce,
-			TS:       evt.TS,
-			Payload:  payload,
+			DeviceID:  evt.DeviceID,
+			Nonce:     evt.Nonce,
+			TS:        evt.TS,
+			Payload:   payload,
+			Signature: evt.Signature,
 		}
 	}
 	return copied

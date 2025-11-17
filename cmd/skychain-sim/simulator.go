@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/skychain/skychain/pkg/chain"
+	"github.com/skychain/skychain/pkg/eventauth"
 )
 
 // Simulator coordinates a fleet of virtual devices generating readings.
@@ -132,7 +133,7 @@ func (d *Device) loop(ctx context.Context) {
 			continue
 		}
 
-		s.debugf("device %s sent reading %s nonce=%s", d.id, sensor, event.Nonce)
+		s.debugf("device %s sent reading %s nonce=%d", d.id, sensor, event.Nonce)
 	}
 }
 
@@ -157,16 +158,18 @@ func (d *Device) buildEvent(sensor string) chain.Event {
 		"device_pub": base64.StdEncoding.EncodeToString(d.pubKey),
 	}
 
-	message := fmt.Sprintf("%s|%s|%v|%d|%s", d.id, sensor, value, d.nonce, ts.Format(time.RFC3339Nano))
-	sig := ed25519.Sign(d.privKey, []byte(message))
-	payload["signature"] = base64.StdEncoding.EncodeToString(sig)
-
-	return chain.Event{
+	evt := chain.Event{
 		DeviceID: d.id,
-		Nonce:    fmt.Sprintf("%d", d.nonce),
+		Nonce:    d.nonce,
 		TS:       ts,
 		Payload:  payload,
 	}
+	sig, err := eventauth.Sign(evt, d.privKey)
+	if err != nil {
+		panic(fmt.Sprintf("sign event: %v", err))
+	}
+	evt.Signature = sig
+	return evt
 }
 
 func (d *Device) generateValue(sensor string) (float64, bool) {
