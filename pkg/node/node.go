@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/skychain/skychain/pkg/chain"
+	"github.com/skychain/skychain/pkg/registry"
 )
 
 // Node orchestrates event ingestion, block production, and HTTP serving.
@@ -17,6 +18,7 @@ type Node struct {
 	chain       *chain.Chain
 	storagePath string
 	interval    time.Duration
+	registry    *registry.DeviceRegistry
 
 	pendingMu sync.Mutex
 	pending   []chain.Event
@@ -27,7 +29,7 @@ type Node struct {
 }
 
 // NewNode creates a new SkyChain node.
-func NewNode(c *chain.Chain, storagePath string, interval time.Duration) (*Node, error) {
+func NewNode(c *chain.Chain, storagePath string, interval time.Duration, reg *registry.DeviceRegistry) (*Node, error) {
 	if c == nil {
 		return nil, errors.New("chain required")
 	}
@@ -37,11 +39,15 @@ func NewNode(c *chain.Chain, storagePath string, interval time.Duration) (*Node,
 	if interval <= 0 {
 		return nil, errors.New("interval must be positive")
 	}
+	if reg == nil {
+		return nil, errors.New("device registry required")
+	}
 
 	return &Node{
 		chain:       c,
 		storagePath: storagePath,
 		interval:    interval,
+		registry:    reg,
 		pending:     make([]chain.Event, 0),
 		stopChan:    make(chan struct{}),
 	}, nil
@@ -50,6 +56,11 @@ func NewNode(c *chain.Chain, storagePath string, interval time.Duration) (*Node,
 // Start begins the background block production loop.
 func (n *Node) Start(ctx context.Context) {
 	n.startOnce.Do(func() {
+		go func() {
+			if err := n.registry.Watch(ctx, log.Default()); err != nil {
+				log.Printf("registry watcher stopped: %v", err)
+			}
+		}()
 		go n.run(ctx)
 	})
 }
@@ -171,6 +182,10 @@ func (n *Node) handleEvent(w http.ResponseWriter, r *http.Request) {
 
 	if req.DeviceID == "" {
 		http.Error(w, "device_id is required", http.StatusBadRequest)
+		return
+	}
+	if _, err := n.registry.Lookup(req.DeviceID); err != nil {
+		http.Error(w, "device is not registered", http.StatusForbidden)
 		return
 	}
 
