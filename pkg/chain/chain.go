@@ -79,6 +79,11 @@ func NewChain(validator, secret string) (*Chain, error) {
 	genesis.Signature = signHash(hash, secret)
 
 	c.blocks = append(c.blocks, genesis)
+
+	if err := validateBlockSequence(c.blocks, secret); err != nil {
+		return nil, fmt.Errorf("genesis block failed validation: %w", err)
+	}
+
 	return c, nil
 }
 
@@ -102,7 +107,7 @@ func (c *Chain) AppendBlock(events []Event) (Block, error) {
 		Index:     len(c.blocks),
 		Timestamp: time.Now().UTC(),
 		PrevHash:  prev.Hash,
-		Events:    deepCopyEvents(events),
+		Events:    events,
 		Validator: c.validator,
 	}
 
@@ -123,16 +128,6 @@ func (c *Chain) AppendBlock(events []Event) (Block, error) {
 	return block, nil
 }
 
-// Blocks returns a copy of the blocks in the chain.
-func (c *Chain) Blocks() []Block {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	out := make([]Block, len(c.blocks))
-	copy(out, c.blocks)
-	return out
-}
-
 // Head returns the most recent block in the chain.
 func (c *Chain) Head() Block {
 	c.mu.RLock()
@@ -151,14 +146,13 @@ func (c *Chain) Length() int {
 
 // Validate ensures that all hashes and indexes are consistent.
 func (c *Chain) Validate() error {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	blocks := c.Blocks()
 
-	if len(c.blocks) == 0 {
+	if len(blocks) == 0 {
 		return errors.New("chain has no blocks")
 	}
 
-	for i, block := range c.blocks {
+	for i, block := range blocks {
 		if block.Index != i {
 			return fmt.Errorf("block %d has incorrect index %d", i, block.Index)
 		}
@@ -168,7 +162,7 @@ func (c *Chain) Validate() error {
 				return fmt.Errorf("genesis block should have empty prev hash")
 			}
 		} else {
-			prev := c.blocks[i-1]
+			prev := blocks[i-1]
 			if block.PrevHash != prev.Hash {
 				return fmt.Errorf("block %d has invalid prev hash", i)
 			}
@@ -354,8 +348,8 @@ func validateBlockSequence(blocks []Block, secret string) error {
 	return nil
 }
 
-// Snapshot returns a deep copy of the underlying block slice.
-func (c *Chain) Snapshot() []Block {
+// Blocks returns a deep copy of the underlying block slice.
+func (c *Chain) Blocks() []Block {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 

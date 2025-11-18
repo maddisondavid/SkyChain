@@ -149,3 +149,49 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		t.Fatalf("expected chain file to exist: %v", err)
 	}
 }
+
+func TestReplaceBlocks(t *testing.T) {
+	chain, err := NewChain("validator", "secret")
+	if err != nil {
+		t.Fatalf("new chain: %v", err)
+	}
+
+	newBlocks := make([]Block, 3)
+	for i := 0; i < 3; i++ {
+		prevHash := ""
+		if i > 0 {
+			prevHash = newBlocks[i-1].Hash
+		}
+		block := Block{
+			Index:     i,
+			Timestamp: time.Now().UTC(),
+			PrevHash:  prevHash,
+			Events:    []Event{},
+			Validator: "validator",
+		}
+		root, err := computeMerkleRoot(block.Events)
+		if err != nil {
+			t.Fatalf("compute merkle root: %v", err)
+		}
+		block.MerkleRoot = root
+		hash, err := computeBlockHash(block)
+		if err != nil {
+			t.Fatalf("compute block hash: %v", err)
+		}
+		block.Hash = hash
+		block.Signature = signHash(hash, "secret")
+		newBlocks[i] = block
+	}
+
+	if err := chain.ReplaceBlocks(newBlocks); err != nil {
+		t.Fatalf("replace blocks: %v", err)
+	}
+
+	if chain.Length() != 3 {
+		t.Fatalf("expected chain length 3 got %d", chain.Length())
+	}
+
+	if err := chain.Validate(); err != nil {
+		t.Fatalf("chain validate: %v", err)
+	}
+}
