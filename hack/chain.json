@@ -1,0 +1,14 @@
+// This is an example of a chain data file.
+// It contains the blocks of the blockchain.
+[
+  {
+    "index": 0,
+    "timestamp": "2024-01-01T00:00:00Z",
+    "prev_hash": "",
+    "merkle_root": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "hash": "a7c7c0c2a4f7b4d2a3f0e2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3",
+    "events": [],
+    "validator": "skychain-validator",
+    "signature": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4"
+  }
+]

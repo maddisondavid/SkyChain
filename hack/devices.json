@@ -1,0 +1,7 @@
+// This is an example of a device registry file.
+// It maps device IDs to their public keys.
+{
+  "sensor-alpha": "nC0VZHmMkzwHTCHnO70V0QDtgyyCoYE+5LxN1cGuRDM=",
+  "sensor-beta": "A68NhM8+qm6ujK8CnwMjrOeX6wrGGKYCVAtfimDdNfM=",
+  "sensor-gamma": "anotherPublicKeyStringComesHere="
+}
