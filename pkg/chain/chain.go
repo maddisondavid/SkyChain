@@ -22,13 +22,14 @@ type Event struct {
 
 // Block contains a list of events and links to the previous block via hash.
 type Block struct {
-	Index     int       `json:"index"`
-	Timestamp time.Time `json:"timestamp"`
-	PrevHash  string    `json:"prev_hash"`
-	Hash      string    `json:"hash"`
-	Events    []Event   `json:"events"`
-	Validator string    `json:"validator"`
-	Signature string    `json:"signature"`
+	Index      int       `json:"index"`
+	Timestamp  time.Time `json:"timestamp"`
+	PrevHash   string    `json:"prev_hash"`
+	MerkleRoot string    `json:"merkle_root"`
+	Hash       string    `json:"hash"`
+	Events     []Event   `json:"events"`
+	Validator  string    `json:"validator"`
+	Signature  string    `json:"signature"`
 }
 
 // Chain maintains an append-only ledger of blocks.
@@ -62,6 +63,12 @@ func NewChain(validator, secret string) (*Chain, error) {
 		Events:    []Event{},
 		Validator: validator,
 	}
+
+	root, err := computeMerkleRoot(genesis.Events)
+	if err != nil {
+		return nil, err
+	}
+	genesis.MerkleRoot = root
 
 	hash, err := computeBlockHash(genesis)
 	if err != nil {
@@ -98,6 +105,12 @@ func (c *Chain) AppendBlock(events []Event) (Block, error) {
 		Events:    deepCopyEvents(events),
 		Validator: c.validator,
 	}
+
+	root, err := computeMerkleRoot(block.Events)
+	if err != nil {
+		return Block{}, err
+	}
+	block.MerkleRoot = root
 
 	hash, err := computeBlockHash(block)
 	if err != nil {
@@ -161,6 +174,14 @@ func (c *Chain) Validate() error {
 			}
 		}
 
+		expectedRoot, err := computeMerkleRoot(block.Events)
+		if err != nil {
+			return err
+		}
+		if block.MerkleRoot != expectedRoot {
+			return fmt.Errorf("block %d merkle root mismatch", i)
+		}
+
 		hash, err := computeBlockHash(block)
 		if err != nil {
 			return err
@@ -221,19 +242,56 @@ func deepCopyEvents(events []Event) []Event {
 	return copied
 }
 
+func computeMerkleRoot(events []Event) (string, error) {
+	if len(events) == 0 {
+		empty := sha256.Sum256(nil)
+		return hex.EncodeToString(empty[:]), nil
+	}
+
+	hashes := make([][]byte, len(events))
+	for i, evt := range events {
+		data, err := json.Marshal(evt)
+		if err != nil {
+			return "", err
+		}
+		sum := sha256.Sum256(data)
+		hashes[i] = sum[:]
+	}
+
+	for len(hashes) > 1 {
+		next := make([][]byte, 0, (len(hashes)+1)/2)
+		for i := 0; i < len(hashes); i += 2 {
+			left := hashes[i]
+			right := left
+			if i+1 < len(hashes) {
+				right = hashes[i+1]
+			}
+
+			combined := make([]byte, 0, len(left)+len(right))
+			combined = append(combined, left...)
+			combined = append(combined, right...)
+			sum := sha256.Sum256(combined)
+			next = append(next, sum[:])
+		}
+		hashes = next
+	}
+
+	return hex.EncodeToString(hashes[0]), nil
+}
+
 func computeBlockHash(block Block) (string, error) {
 	toHash := struct {
-		Index     int       `json:"index"`
-		Timestamp time.Time `json:"timestamp"`
-		PrevHash  string    `json:"prev_hash"`
-		Events    []Event   `json:"events"`
-		Validator string    `json:"validator"`
+		Index      int       `json:"index"`
+		Timestamp  time.Time `json:"timestamp"`
+		PrevHash   string    `json:"prev_hash"`
+		MerkleRoot string    `json:"merkle_root"`
+		Validator  string    `json:"validator"`
 	}{
-		Index:     block.Index,
-		Timestamp: block.Timestamp,
-		PrevHash:  block.PrevHash,
-		Events:    block.Events,
-		Validator: block.Validator,
+		Index:      block.Index,
+		Timestamp:  block.Timestamp,
+		PrevHash:   block.PrevHash,
+		MerkleRoot: block.MerkleRoot,
+		Validator:  block.Validator,
 	}
 
 	data, err := json.Marshal(toHash)
@@ -270,6 +328,14 @@ func validateBlockSequence(blocks []Block, secret string) error {
 			if block.PrevHash != prev.Hash {
 				return fmt.Errorf("block %d previous hash mismatch", i)
 			}
+		}
+
+		expectedRoot, err := computeMerkleRoot(block.Events)
+		if err != nil {
+			return err
+		}
+		if block.MerkleRoot != expectedRoot {
+			return fmt.Errorf("block %d merkle root mismatch", i)
 		}
 
 		hash, err := computeBlockHash(block)

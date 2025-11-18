@@ -1,6 +1,9 @@
 package chain
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -38,6 +41,75 @@ func TestAppendBlockLinkage(t *testing.T) {
 
 	if err := chain.Validate(); err != nil {
 		t.Fatalf("chain validate: %v", err)
+	}
+}
+
+func TestBlockCarriesMerkleRoot(t *testing.T) {
+	chain, err := NewChain("validator", "secret")
+	if err != nil {
+		t.Fatalf("new chain: %v", err)
+	}
+
+	evt := Event{DeviceID: "sensor-3", Nonce: 2, TS: time.Unix(0, 0).UTC()}
+	block, err := chain.AppendBlock([]Event{evt})
+	if err != nil {
+		t.Fatalf("append block: %v", err)
+	}
+
+	root, err := computeMerkleRoot(block.Events)
+	if err != nil {
+		t.Fatalf("compute merkle root: %v", err)
+	}
+	if block.MerkleRoot != root {
+		t.Fatalf("expected block merkle root %s got %s", root, block.MerkleRoot)
+	}
+}
+
+func TestComputeMerkleRootDeterministic(t *testing.T) {
+	evt := Event{
+		DeviceID: "sensor-5",
+		Nonce:    10,
+		TS:       time.Unix(100, 0).UTC(),
+		Payload: map[string]any{
+			"temp": 42.1,
+		},
+		Signature: "sig",
+	}
+
+	root, err := computeMerkleRoot([]Event{evt})
+	if err != nil {
+		t.Fatalf("compute merkle root: %v", err)
+	}
+
+	data, err := json.Marshal(evt)
+	if err != nil {
+		t.Fatalf("marshal event: %v", err)
+	}
+	sum := sha256.Sum256(data)
+	expected := hex.EncodeToString(sum[:])
+	if root != expected {
+		t.Fatalf("expected %s got %s", expected, root)
+	}
+}
+
+func TestChainValidateDetectsMerkleMismatch(t *testing.T) {
+	chain, err := NewChain("validator", "secret")
+	if err != nil {
+		t.Fatalf("new chain: %v", err)
+	}
+
+	evt := Event{DeviceID: "sensor-6", Nonce: 1, TS: time.Now().UTC()}
+	if _, err := chain.AppendBlock([]Event{evt}); err != nil {
+		t.Fatalf("append block: %v", err)
+	}
+
+	if len(chain.blocks) < 2 {
+		t.Fatalf("expected chain to have at least 2 blocks")
+	}
+	chain.blocks[1].MerkleRoot = "deadbeef"
+
+	if err := chain.Validate(); err == nil {
+		t.Fatalf("expected validation to fail for tampered merkle root")
 	}
 }
 

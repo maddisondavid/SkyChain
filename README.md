@@ -77,6 +77,24 @@ The node listens on the configured address and writes the blockchain to the prov
 | `/head`  | `GET` | Inspect metadata for the most recent block. |
 | `/health`| `GET` | Node status (validator id, block count, pending queue length). |
 
+### Block Format
+Each sealed block stores a header with `index`, `prev_hash`, `timestamp`, `validator`, and a `merkle_root` that summarizes the block's events.
+The node hashes and signs the header so clients can verify block integrity by recomputing the Merkle root over the returned
+events.
+
+```jsonc
+{
+  "index": 12,
+  "timestamp": "2024-01-02T15:04:15Z",
+  "prev_hash": "...",
+  "merkle_root": "f1d48c...",
+  "hash": "d9b3de...",
+  "events": [ /* trimmed for brevity */ ],
+  "validator": "skychain-validator",
+  "signature": "..."
+}
+```
+
 Example event submission:
 ```bash
 curl -X POST http://localhost:8080/event \
