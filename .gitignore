@@ -33,3 +33,7 @@ data/
 # Editor/IDE
 # .idea/
 # .vscode/
+
+skychain
+skychain-sim
+devicectl
