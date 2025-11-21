@@ -100,3 +100,61 @@ func TestHandleEventSignatureValidation(t *testing.T) {
 		t.Fatalf("expected 409 for replayed nonce got %d", resp.Code)
 	}
 }
+
+func TestHandleProofLookup(t *testing.T) {
+	dir := t.TempDir()
+	chainStore, err := chain.NewChain("validator", "secret")
+	if err != nil {
+		t.Fatalf("new chain: %v", err)
+	}
+	sink := &stubSink{}
+
+	regPath := filepath.Join(dir, "devices.json")
+	if err := os.WriteFile(regPath, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write registry: %v", err)
+	}
+	reg, err := registry.Load(regPath)
+	if err != nil {
+		t.Fatalf("load registry: %v", err)
+	}
+
+	node, err := NewNode(chainStore, sink, time.Second, reg)
+	if err != nil {
+		t.Fatalf("new node: %v", err)
+	}
+
+	evt := chain.Event{DeviceID: "dev-1", Nonce: 1, TS: time.Unix(10, 0).UTC()}
+	blk, err := chainStore.AppendBlock([]chain.Event{evt})
+	if err != nil {
+		t.Fatalf("append block: %v", err)
+	}
+	txid, err := chain.EventHash(evt)
+	if err != nil {
+		t.Fatalf("event hash: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/proof?txid="+txid, nil)
+	rr := httptest.NewRecorder()
+	node.handleProof(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 got %d", rr.Code)
+	}
+	var proof chain.MerkleProof
+	if err := json.NewDecoder(rr.Body).Decode(&proof); err != nil {
+		t.Fatalf("decode proof: %v", err)
+	}
+	if proof.BlockIndex != blk.Index || proof.TxID != txid {
+		t.Fatalf("unexpected proof metadata")
+	}
+	if err := chain.VerifyProof(proof); err != nil {
+		t.Fatalf("verify proof: %v", err)
+	}
+
+	missingReq := httptest.NewRequest(http.MethodGet, "/proof?txid=deadbeef", nil)
+	missing := httptest.NewRecorder()
+	node.handleProof(missing, missingReq)
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for missing tx got %d", missing.Code)
+	}
+}
