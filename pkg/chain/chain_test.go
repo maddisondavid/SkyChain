@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 )
@@ -154,5 +155,55 @@ func TestReplaceBlocks(t *testing.T) {
 
 	if err := chain.Validate(); err != nil {
 		t.Fatalf("chain validate: %v", err)
+	}
+}
+
+func TestBuildProofAndVerify(t *testing.T) {
+	chain, err := NewChain("validator", "secret")
+	if err != nil {
+		t.Fatalf("new chain: %v", err)
+	}
+
+	events := []Event{
+		{DeviceID: "sensor-a", Nonce: 1, TS: time.Unix(1, 0).UTC()},
+		{DeviceID: "sensor-b", Nonce: 2, TS: time.Unix(2, 0).UTC()},
+		{DeviceID: "sensor-c", Nonce: 3, TS: time.Unix(3, 0).UTC()},
+	}
+	block, err := chain.AppendBlock(events)
+	if err != nil {
+		t.Fatalf("append block: %v", err)
+	}
+
+	txid, err := EventHash(events[1])
+	if err != nil {
+		t.Fatalf("event hash: %v", err)
+	}
+	proof, err := BuildProofForBlock(block, txid)
+	if err != nil {
+		t.Fatalf("build proof: %v", err)
+	}
+
+	if proof.BlockIndex != block.Index || proof.BlockHash != block.Hash {
+		t.Fatalf("proof metadata mismatch")
+	}
+	if proof.TotalLeaves != len(events) {
+		t.Fatalf("expected total leaves %d got %d", len(events), proof.TotalLeaves)
+	}
+	if len(proof.Branch) == 0 {
+		t.Fatalf("expected non-empty branch")
+	}
+	if err := VerifyProof(proof); err != nil {
+		t.Fatalf("verify proof: %v", err)
+	}
+}
+
+func TestBuildProofMissingTx(t *testing.T) {
+	block := Block{Events: []Event{{DeviceID: "sensor-a", Nonce: 1, TS: time.Now().UTC()}}}
+	proof, err := BuildProofForBlock(block, "deadbeef")
+	if !errors.Is(err, ErrTxNotFound) {
+		t.Fatalf("expected ErrTxNotFound got %v", err)
+	}
+	if proof.TxID != "" || len(proof.Branch) != 0 {
+		t.Fatalf("expected empty proof on missing tx")
 	}
 }

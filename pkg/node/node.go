@@ -181,6 +181,7 @@ func (n *Node) Handler() http.Handler {
 	mux.HandleFunc("/event", n.handleEvent)
 	mux.HandleFunc("/chain", n.handleChain)
 	mux.HandleFunc("/head", n.handleHead)
+	mux.HandleFunc("/proof", n.handleProof)
 	mux.HandleFunc("/health", n.handleHealth)
 	return mux
 }
@@ -211,6 +212,13 @@ func (n *Node) handleEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	txid, err := chain.EventHash(evt)
+	if err != nil {
+		log.Printf("compute event hash: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
 	n.AddEvent(evt)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -218,6 +226,7 @@ func (n *Node) handleEvent(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{
 		"status":  "queued",
 		"pending": n.Pending(),
+		"txid":    txid,
 	})
 }
 
@@ -239,6 +248,37 @@ func (n *Node) handleHead(w http.ResponseWriter, r *http.Request) {
 
 	head := n.chain.Head()
 	respondJSON(w, head)
+}
+
+func (n *Node) handleProof(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	txid := r.URL.Query().Get("txid")
+	if txid == "" {
+		http.Error(w, "txid query param is required", http.StatusBadRequest)
+		return
+	}
+
+	blocks := n.chain.Blocks()
+	for _, blk := range blocks {
+		proof, err := chain.BuildProofForBlock(blk, txid)
+		if err != nil {
+			if errors.Is(err, chain.ErrTxNotFound) {
+				continue
+			}
+			log.Printf("build proof: %v", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		respondJSON(w, proof)
+		return
+	}
+
+	http.Error(w, "transaction not found", http.StatusNotFound)
 }
 
 func (n *Node) handleHealth(w http.ResponseWriter, r *http.Request) {

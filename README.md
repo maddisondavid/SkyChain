@@ -72,9 +72,10 @@ The node listens on the configured address and writes the blockchain to the prov
 ### REST API
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/event` | `POST` | Submit an IoT event `{device_id, nonce, ts, payload, sig}`. `sig` is a base64 ED25519 signature over the canonical event payload. `ts` must be RFC3339; it defaults to the arrival time when omitted. |
+| `/event` | `POST` | Submit an IoT event `{device_id, nonce, ts, payload, sig}`. `sig` is a base64 ED25519 signature over the canonical event payload. `ts` must be RFC3339; it defaults to the arrival time when omitted. Returns the queued transaction hash (`txid`) so clients can fetch proofs later. |
 | `/chain` | `GET` | Retrieve the full chain as JSON. |
 | `/head`  | `GET` | Inspect metadata for the most recent block. |
+| `/proof` | `GET` | Build a Merkle inclusion proof for a transaction hash: `/proof?txid=<hex-hash>`. Responds with the branch and block metadata or `404` if the transaction does not exist. |
 | `/health`| `GET` | Node status (validator id, block count, pending queue length). |
 
 ### Block Format
@@ -106,6 +107,44 @@ curl -X POST http://localhost:8080/event \
     "payload": {"temp": 21.7},
     "sig": "BASE64_SIGNATURE"
   }'
+```
+
+### Inclusion Proofs
+Retrieve the Merkle branch for a transaction hash and verify it locally:
+
+```bash
+curl "http://localhost:8080/proof?txid=<TX_HASH>"
+```
+
+Example response:
+
+```jsonc
+{
+  "txid": "b8e9...",
+  "block_index": 12,
+  "block_hash": "7f2c...",
+  "merkle_root": "a93d...",
+  "leaf_hash": "b8e9...",
+  "leaf_index": 2,
+  "total_leaves": 5,
+  "branch": [
+    {"position": "left", "hash": "14aa..."},
+    {"position": "right", "hash": "55bc..."}
+  ],
+  "validator": "skychain-validator",
+  "timestamp": "2024-01-02T15:04:15Z"
+}
+```
+
+Client-side verification using the bundled helper:
+
+```go
+var proof chain.MerkleProof
+// populate proof from /proof response
+if err := chain.VerifyProof(proof); err != nil {
+    log.Fatalf("proof invalid: %v", err)
+}
+fmt.Println("transaction is included in block", proof.BlockIndex)
 ```
 
 Requests from devices that do not appear in the configured registry or that present invalid signatures receive `403 Forbidden` responses. Each device nonce must be strictly increasing; replayed nonces result in `409 Conflict` responses.

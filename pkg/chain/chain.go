@@ -244,12 +244,15 @@ func computeMerkleRoot(events []Event) (string, error) {
 
 	hashes := make([][]byte, len(events))
 	for i, evt := range events {
-		data, err := json.Marshal(evt)
+		hash, err := EventHash(evt)
 		if err != nil {
 			return "", err
 		}
-		sum := sha256.Sum256(data)
-		hashes[i] = sum[:]
+		hashBytes, err := hex.DecodeString(hash)
+		if err != nil {
+			return "", err
+		}
+		hashes[i] = hashBytes
 	}
 
 	for len(hashes) > 1 {
