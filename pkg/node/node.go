@@ -18,10 +18,10 @@ import (
 
 // Node orchestrates event ingestion, block production, and HTTP serving.
 type Node struct {
-	chain       *chain.Chain
-	storagePath string
-	interval    time.Duration
-	registry    *registry.DeviceRegistry
+	chain    *chain.Chain
+	store    blockSink
+	interval time.Duration
+	registry *registry.DeviceRegistry
 
 	pendingMu sync.Mutex
 	pending   []chain.Event
@@ -34,13 +34,17 @@ type Node struct {
 	stopChan  chan struct{}
 }
 
+type blockSink interface {
+	PersistBlock(chain.Block) error
+}
+
 // NewNode creates a new SkyChain node.
-func NewNode(c *chain.Chain, storagePath string, interval time.Duration, reg *registry.DeviceRegistry) (*Node, error) {
+func NewNode(c *chain.Chain, sink blockSink, interval time.Duration, reg *registry.DeviceRegistry) (*Node, error) {
 	if c == nil {
 		return nil, errors.New("chain required")
 	}
-	if storagePath == "" {
-		return nil, errors.New("storage path required")
+	if sink == nil {
+		return nil, errors.New("block store required")
 	}
 	if interval <= 0 {
 		return nil, errors.New("interval must be positive")
@@ -50,13 +54,13 @@ func NewNode(c *chain.Chain, storagePath string, interval time.Duration, reg *re
 	}
 
 	return &Node{
-		chain:       c,
-		storagePath: storagePath,
-		interval:    interval,
-		registry:    reg,
-		pending:     make([]chain.Event, 0),
-		lastNonce:   make(map[string]uint64),
-		stopChan:    make(chan struct{}),
+		chain:     c,
+		store:     sink,
+		interval:  interval,
+		registry:  reg,
+		pending:   make([]chain.Event, 0),
+		lastNonce: make(map[string]uint64),
+		stopChan:  make(chan struct{}),
 	}, nil
 }
 
@@ -138,8 +142,8 @@ func (n *Node) flush() {
 		return
 	}
 
-	if err := n.chain.SaveToFile(n.storagePath); err != nil {
-		log.Printf("persist chain: %v", err)
+	if err := n.store.PersistBlock(block); err != nil {
+		log.Printf("persist block: %v", err)
 		return
 	}
 
