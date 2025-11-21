@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,13 +18,25 @@ import (
 	"github.com/skychain/skychain/pkg/registry"
 )
 
+type stubSink struct {
+	mu     sync.Mutex
+	blocks []chain.Block
+}
+
+func (s *stubSink) PersistBlock(block chain.Block) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.blocks = append(s.blocks, block)
+	return nil
+}
+
 func TestHandleEventSignatureValidation(t *testing.T) {
 	dir := t.TempDir()
 	chainStore, err := chain.NewChain("validator", "secret")
 	if err != nil {
 		t.Fatalf("new chain: %v", err)
 	}
-	storagePath := filepath.Join(dir, "chain.json")
+	sink := &stubSink{}
 
 	pub, priv, err := ed25519.GenerateKey(nil)
 	if err != nil {
@@ -39,7 +52,7 @@ func TestHandleEventSignatureValidation(t *testing.T) {
 		t.Fatalf("load registry: %v", err)
 	}
 
-	node, err := NewNode(chainStore, storagePath, time.Second, reg)
+	node, err := NewNode(chainStore, sink, time.Second, reg)
 	if err != nil {
 		t.Fatalf("new node: %v", err)
 	}

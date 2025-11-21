@@ -10,14 +10,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/skychain/skychain/pkg/chain"
 	"github.com/skychain/skychain/pkg/node"
 	"github.com/skychain/skychain/pkg/registry"
+	"github.com/skychain/skychain/pkg/storage"
 )
 
 func main() {
 	var (
-		dataPath   = flag.String("data", "data/chain.json", "path to the chain json file")
+		dataPath   = flag.String("data", "data/chain.db", "path to the chain database file")
 		addr       = flag.String("addr", ":8080", "http listen address")
 		interval   = flag.Duration("interval", 10*time.Second, "block sealing interval")
 		validator  = flag.String("validator", "skychain-validator", "validator identifier")
@@ -31,12 +31,18 @@ func main() {
 		log.Fatalf("load device registry: %v", err)
 	}
 
-	ledger, err := chain.LoadOrCreate(*dataPath, *validator, *secret)
+	store, err := storage.OpenFileBlockStore(*dataPath)
+	if err != nil {
+		log.Fatalf("open block store: %v", err)
+	}
+	defer store.Close()
+
+	ledger, err := store.LoadChain(*validator, *secret)
 	if err != nil {
 		log.Fatalf("load chain: %v", err)
 	}
 
-	skyNode, err := node.NewNode(ledger, *dataPath, *interval, reg)
+	skyNode, err := node.NewNode(ledger, store, *interval, reg)
 	if err != nil {
 		log.Fatalf("create node: %v", err)
 	}
@@ -75,7 +81,5 @@ func main() {
 		log.Printf("http shutdown error: %v", err)
 	}
 
-	if err := ledger.SaveToFile(*dataPath); err != nil {
-		log.Printf("finalize chain: %v", err)
-	}
+	// Blocks are persisted incrementally, so no final flush is required.
 }

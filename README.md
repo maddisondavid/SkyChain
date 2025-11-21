@@ -49,7 +49,7 @@ Key themes guiding future work:
 ---
 
 ## MVP Validator
-The initial MVP targets a single-validator setup that accepts IoT events over HTTP, seals them into blocks every 10 seconds, and persists the ledger as JSON on disk.
+The initial MVP targets a single-validator setup that accepts IoT events over HTTP, seals them into blocks every 10 seconds, and persists the ledger inside an append-only JSONL block log on disk.
 
 ### Build
 ```bash
@@ -60,7 +60,7 @@ go build ./cmd/skychain
 ```bash
 ./skychain \
   --addr ":8080" \
-  --data data/chain.json \
+  --data data/chain.db \
   --interval 10s \
   --validator skychain-validator \
   --secret skychain-local-secret \
